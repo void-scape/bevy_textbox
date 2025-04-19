@@ -1,0 +1,172 @@
+//! Integrates `bevy_pretty_text` and `bevy_sequence` into a simple `TextBox`.
+//!
+//! Here is a simple example:
+//! ```
+//! fn startup(mut commands: Commands, asset_server: Res<AssetServer>) {
+//!     commands.spawn(Camera2d);
+//!
+//!     let entity = commands
+//!         .spawn((
+//!             TextBox,
+//!             Sprite {
+//!                 image: asset_server.load("textbox.png"),
+//!                 anchor: Anchor::TopLeft,
+//!                 ..Default::default()
+//!             },
+//!             Transform::from_xyz(-600., 0., 0.),
+//!         ))
+//!         .with_child((
+//!             Sprite {
+//!                 image: asset_server.load("continue.png"),
+//!                 anchor: Anchor::TopLeft,
+//!                 ..Default::default()
+//!             },
+//!             Transform::from_translation(Vec3::default().with_z(100.)),
+//!             Continue,
+//!             Visibility::Hidden,
+//!         ))
+//!         .id();
+//!
+//!     let frag = (s!("`Hello|green`[0.5], `World`[wave]!"), "My name is Nic.")
+//!         .always()
+//!         .once()
+//!         .on_end(move |mut commands: Commands| commands.entity(entity).despawn_recursive());
+//!     spawn_root_with_context(frag, TextBoxEntity(entity), &mut commands);
+//! }
+//! ```
+
+use bevy::{
+    input::{keyboard::KeyboardInput, ButtonState},
+    prelude::*,
+    sprite::Anchor,
+    text::TextBounds,
+};
+use bevy_pretty_text::prelude::*;
+use bevy_sequence::{fragment::DataLeaf, prelude::*};
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+struct TextboxSystems;
+
+pub struct TextboxPlugin;
+
+impl Plugin for TextboxPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins((PrettyTextPlugin, SequencePlugin))
+            .add_event::<UpdateContinueVis>()
+            .add_systems(
+                Update,
+                (spawn_section_frags, update_continue_visibility).in_set(TextboxSystems),
+            );
+    }
+}
+
+#[derive(Component)]
+pub struct TextBox;
+
+#[derive(Component)]
+pub struct TextBoxEntity(Entity);
+
+#[derive(Component)]
+pub struct Continue;
+
+#[derive(Event)]
+pub struct UpdateContinueVis {
+    entity: Entity,
+    visibility: Visibility,
+}
+
+impl UpdateContinueVis {
+    pub fn new(entity: Entity, visibility: Visibility) -> Self {
+        Self { entity, visibility }
+    }
+}
+
+fn update_continue_visibility(
+    textbox_query: Query<&Children, With<TextBox>>,
+    mut continue_query: Query<&mut Visibility, With<Continue>>,
+    mut reader: EventReader<UpdateContinueVis>,
+) {
+    for event in reader.read() {
+        if let Ok(children) = textbox_query.get(event.entity) {
+            for child in children.iter() {
+                if let Ok(mut cont) = continue_query.get_mut(*child) {
+                    *cont = event.visibility;
+                }
+            }
+        }
+    }
+}
+
+// TODO: this leaks memory (SystemId)
+fn spawn_section_frags(
+    mut commands: Commands,
+    mut reader: EventReader<FragmentEvent<SectionFrag>>,
+) {
+    for event in reader.read() {
+        let textbox = event.data.textbox;
+        let end = event.end();
+        let entity = commands.spawn_empty().id();
+        let on_end = commands.register_system(
+            move |mut commands: Commands, mut writer: EventWriter<UpdateContinueVis>| {
+                let id = commands.register_system(
+                    move |mut commands: Commands,
+                          mut frag_writer: EventWriter<FragmentEndEvent>,
+                          mut continue_writer: EventWriter<UpdateContinueVis>| {
+                        frag_writer.send(end);
+                        commands.entity(entity).despawn_recursive();
+                        continue_writer.send(UpdateContinueVis::new(textbox, Visibility::Hidden));
+                    },
+                );
+
+                commands.entity(entity).insert(AwaitClear::on_clear(id));
+                writer.send(UpdateContinueVis::new(textbox, Visibility::Visible));
+            },
+        );
+
+        let id = commands
+            .entity(entity)
+            .insert((
+                event.data.section.clone(),
+                Scroll::default(),
+                OnScrollEnd(on_end),
+                TextBounds::new(920., 300.),
+                TextFont {
+                    font_size: 30.,
+                    ..Default::default()
+                },
+                Anchor::TopLeft,
+                TextLayout::default().with_linebreak(LineBreak::AnyCharacter),
+                Transform::from_xyz(130., -60., 100.),
+            ))
+            .id();
+        commands.entity(textbox).add_child(id);
+    }
+}
+
+#[derive(Clone)]
+pub struct SectionFrag {
+    textbox: Entity,
+    section: TypeWriterSection,
+}
+
+macro_rules! impl_into_frag {
+    ($ty:ty, $x:ident, $into:expr) => {
+        impl IntoFragment<SectionFrag, TextBoxEntity> for $ty {
+            fn into_fragment(self, context: &TextBoxEntity, commands: &mut Commands) -> FragmentId {
+                let $x = self;
+                <_ as IntoFragment<SectionFrag, TextBoxEntity>>::into_fragment(
+                    DataLeaf::new(SectionFrag {
+                        textbox: context.0,
+                        section: $into,
+                    }),
+                    context,
+                    commands,
+                )
+            }
+        }
+    };
+}
+
+impl_into_frag!(&'static str, slf, slf.into());
+impl_into_frag!(String, slf, slf.into());
+impl_into_frag!(TypeWriterSection, slf, slf);

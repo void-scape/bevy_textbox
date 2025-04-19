@@ -1,0 +1,9 @@
+[package]
+name = "bevy_textbox"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = "0.15"
+bevy_pretty_text = { git = "https://github.com/void-scape/bevy_pretty_text.git" }
+bevy_sequence = { git = "https://github.com/CorvusPrudens/bevy_sequence.git" }
