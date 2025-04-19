@@ -35,12 +35,7 @@
 //! }
 //! ```
 
-use bevy::{
-    input::{keyboard::KeyboardInput, ButtonState},
-    prelude::*,
-    sprite::Anchor,
-    text::TextBounds,
-};
+use bevy::{prelude::*, sprite::Anchor, text::TextBounds};
 use bevy_pretty_text::prelude::*;
 use bevy_sequence::{fragment::DataLeaf, prelude::*};
 
@@ -65,6 +60,12 @@ pub struct TextBox;
 
 #[derive(Component)]
 pub struct TextBoxEntity(Entity);
+
+impl TextBoxEntity {
+    pub fn new(entity: Entity) -> Self {
+        Self(entity)
+    }
+}
 
 #[derive(Component)]
 pub struct Continue;
@@ -118,7 +119,7 @@ fn spawn_section_frags(
                     },
                 );
 
-                commands.entity(entity).insert(AwaitClear::on_clear(id));
+                commands.entity(entity).insert((AwaitClear, OnClear(id)));
                 writer.send(UpdateContinueVis::new(textbox, Visibility::Visible));
             },
         );
@@ -152,11 +153,15 @@ pub struct SectionFrag {
 macro_rules! impl_into_frag {
     ($ty:ty, $x:ident, $into:expr) => {
         impl IntoFragment<SectionFrag, TextBoxEntity> for $ty {
-            fn into_fragment(self, context: &TextBoxEntity, commands: &mut Commands) -> FragmentId {
+            fn into_fragment(
+                self,
+                context: &Context<TextBoxEntity>,
+                commands: &mut Commands,
+            ) -> FragmentId {
                 let $x = self;
                 <_ as IntoFragment<SectionFrag, TextBoxEntity>>::into_fragment(
                     DataLeaf::new(SectionFrag {
-                        textbox: context.0,
+                        textbox: context.read().unwrap().0,
                         section: $into,
                     }),
                     context,
