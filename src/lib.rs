@@ -48,6 +48,7 @@ impl Plugin for TextboxPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((PrettyTextPlugin, SequencePlugin))
             .add_event::<UpdateContinueVis>()
+            .add_event::<FragmentEvent<SectionFrag>>()
             .add_systems(
                 Update,
                 (spawn_section_frags, update_continue_visibility).in_set(TextboxSystems),
