@@ -35,9 +35,10 @@
 //! }
 //! ```
 
-use bevy::{prelude::*, sprite::Anchor, text::TextBounds};
+use bevy::prelude::*;
 use bevy_pretty_text::prelude::*;
 use bevy_sequence::{fragment::DataLeaf, prelude::*};
+use std::sync::Arc;
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 struct TextboxSystems;
@@ -57,7 +58,28 @@ impl Plugin for TextboxPlugin {
 }
 
 #[derive(Component)]
-pub struct TextBox;
+pub struct TextBox {
+    bundle: TextBoxBundle,
+}
+
+impl TextBox {
+    pub fn new(bundle: impl Bundle + Clone) -> Self {
+        Self {
+            bundle: TextBoxBundle::new(bundle),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct TextBoxBundle(Arc<dyn Fn(&mut EntityCommands) + Send + Sync + 'static>);
+
+impl TextBoxBundle {
+    fn new(bundle: impl Bundle + Clone) -> Self {
+        Self(Arc::new(move |commands| {
+            commands.insert(bundle.clone());
+        }))
+    }
+}
 
 #[derive(Component)]
 pub struct TextBoxEntity(Entity);
@@ -103,6 +125,7 @@ fn update_continue_visibility(
 fn spawn_section_frags(
     mut commands: Commands,
     mut reader: EventReader<FragmentEvent<SectionFrag>>,
+    textboxes: Query<&TextBox>,
 ) {
     for event in reader.read() {
         let textbox = event.data.textbox;
@@ -125,23 +148,15 @@ fn spawn_section_frags(
             },
         );
 
-        let id = commands
-            .entity(entity)
-            .insert((
-                event.data.section.clone(),
-                Scroll::default(),
-                OnScrollEnd(on_end),
-                TextBounds::new(920., 300.),
-                TextFont {
-                    font_size: 30.,
-                    ..Default::default()
-                },
-                Anchor::TopLeft,
-                TextLayout::default().with_linebreak(LineBreak::AnyCharacter),
-                Transform::from_xyz(130., -60., 100.),
-            ))
-            .id();
-        commands.entity(textbox).add_child(id);
+        let mut section = commands.entity(entity);
+        let mut section_commands = section.insert((
+            event.data.section.clone(),
+            Scroll::default(),
+            OnScrollEnd(on_end),
+        ));
+        (textboxes.get(textbox).unwrap().bundle.0)(&mut section_commands);
+        let child = section_commands.id();
+        commands.entity(textbox).add_child(child);
     }
 }
 
