@@ -137,14 +137,14 @@ fn spawn_section_frags(
                     move |mut commands: Commands,
                           mut frag_writer: EventWriter<FragmentEndEvent>,
                           mut continue_writer: EventWriter<UpdateContinueVis>| {
-                        frag_writer.send(end);
-                        commands.entity(entity).despawn_recursive();
-                        continue_writer.send(UpdateContinueVis::new(textbox, Visibility::Hidden));
+                        frag_writer.write(end);
+                        commands.entity(entity).despawn();
+                        continue_writer.write(UpdateContinueVis::new(textbox, Visibility::Hidden));
                     },
                 );
 
                 commands.entity(entity).insert((AwaitClear, OnClear(id)));
-                writer.send(UpdateContinueVis::new(textbox, Visibility::Visible));
+                writer.write(UpdateContinueVis::new(textbox, Visibility::Visible));
             },
         );
 
