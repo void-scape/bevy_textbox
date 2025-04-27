@@ -113,7 +113,7 @@ fn update_continue_visibility(
     for event in reader.read() {
         if let Ok(children) = textbox_query.get(event.entity) {
             for child in children.iter() {
-                if let Ok(mut cont) = continue_query.get_mut(*child) {
+                if let Ok(mut cont) = continue_query.get_mut(child) {
                     *cont = event.visibility;
                 }
             }
